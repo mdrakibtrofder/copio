@@ -19,6 +19,11 @@
     </div>
 
     <div class="hero-right">
+      @if (clip.desktop) {
+        <button type="button" class="pin" [class.on]="pinned()" (click)="togglePin()" title="Keep Copio above other windows">
+          📌 {{ pinned() ? 'Pinned on top' : 'Pin on top' }}
+        </button>
+      }
       <div class="status" [attr.data-state]="stateKey()">
         <span class="dot"></span>{{ stateText() }}
       </div>
@@ -41,6 +46,11 @@
     <div class="banner warn">
       <span>Chrome needs your permission to read the clipboard. Click “Allow”, then choose <b>Allow</b> in the browser prompt (or enable it from the 🔒 icon in the address bar).</span>
       <button type="button" class="btn solid" (click)="retry()">Allow clipboard</button>
+    </div>
+  }
+  @if (!clip.desktop && cfg.enabled() && stateKey() === 'idle') {
+    <div class="banner warn">
+      <span>A browser tab can only read the clipboard while it is focused. To capture copies from other tabs and apps, run the desktop version: <code>npm run desktop</code>.</span>
     </div>
   }
   @if (stateKey() === 'unsupported') {

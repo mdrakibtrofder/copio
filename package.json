@@ -6,7 +6,9 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "desktop": "ng build --configuration development && electron .",
+    "desktop:prod": "ng build && electron ."
   },
   "private": true,
   "packageManager": "npm@10.9.9",
@@ -25,6 +27,8 @@
     "@angular/cli": "^22.2.7",
     "@angular/compiler-cli": "^22.2.0",
     "prettier": "^3.8.1",
-    "typescript": "~6.0.2"
-  }
+    "typescript": "~6.0.2",
+    "electron": "^45.3.2"
+  },
+  "main": "electron/main.cjs"
 }

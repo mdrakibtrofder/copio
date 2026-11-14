@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, ElementRef, computed, effect, inject, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { ClipboardWatcher } from './clipboard-watcher.service';
 import {
   PRESETS,
@@ -31,14 +31,16 @@ export class App {
   protected readonly sepGlyph = sepGlyph;
   protected readonly sepLabel = sepLabel;
 
+  protected readonly pinned = signal(false);
+
   private readonly area = viewChild<ElementRef<HTMLTextAreaElement>>('area');
 
   protected readonly stateKey = computed(() => (this.cfg.enabled() ? this.clip.state() : 'off'));
 
   protected readonly stateText = computed(() => {
     switch (this.stateKey()) {
-      case 'listening': return 'Listening to clipboard';
-      case 'idle': return 'Paused – click this tab to resume';
+      case 'listening': return this.clip.desktop ? 'Listening – works in background' : 'Listening to clipboard';
+      case 'idle': return 'Paused – tab not focused (use the desktop app)';
       case 'blocked': return 'Clipboard access blocked';
       case 'unsupported': return 'Clipboard API not supported';
       default: return 'Capture is off';
@@ -131,13 +133,12 @@ export class App {
 
   protected async copyAll(): Promise<void> {
     const text = this.nb.text();
-    if (!text) return;
-    this.clip.noteSelfWrite(text);
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      /* ignore */
-    }
+    if (text) await this.clip.writeText(text);
+  }
+
+  protected togglePin(): void {
+    this.pinned.update((v) => !v);
+    this.clip.setPinned(this.pinned());
   }
 
   protected download(): void {

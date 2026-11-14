@@ -4,9 +4,21 @@ import { SettingsService } from './settings.service';
 
 export type WatchState = 'off' | 'listening' | 'idle' | 'blocked' | 'unsupported';
 
+/** Exposed by the Electron preload script when Copio runs as a desktop app. */
+interface CopioBridge {
+  isDesktop: true;
+  start(ms: number): void;
+  stop(): void;
+  writeText(text: string): void;
+  setPinned(pinned: boolean): void;
+  onText(cb: (text: string) => void): () => void;
+}
+
 /**
- * Watches the system clipboard. Browsers only allow reading the clipboard while the page
- * is focused, so this polls while the tab is focused and also reads right when it regains focus.
+ * Watches the system clipboard.
+ *  - Desktop app (Electron): the main process polls the clipboard in the background, so copies
+ *    from any tab or application are captured even while Copio is minimised or unfocused.
+ *  - Plain browser: pages may only read the clipboard while their tab is focused.
  */
 @Injectable({ providedIn: 'root' })
 export class ClipboardWatcher {
@@ -19,13 +31,23 @@ export class ClipboardWatcher {
   private busy = false;
   private last: string | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private unsubscribe: (() => void) | undefined;
 
   private readonly onFocus = () => void this.tick();
   private readonly onCopy = () => setTimeout(() => void this.tick(), 80);
   private readonly onVisibility = () => void this.tick();
 
+  private get bridge(): CopioBridge | undefined {
+    return (window as unknown as { copioBridge?: CopioBridge }).copioBridge;
+  }
+
+  /** True when running inside the desktop app (background capture works). */
+  get desktop(): boolean {
+    return !!this.bridge;
+  }
+
   get supported(): boolean {
-    return typeof navigator !== 'undefined' && !!navigator.clipboard?.readText;
+    return this.desktop || (typeof navigator !== 'undefined' && !!navigator.clipboard?.readText);
   }
 
   async start(): Promise<void> {
@@ -35,6 +57,15 @@ export class ClipboardWatcher {
     }
     this.stop(false);
     this.running = true;
+
+    const bridge = this.bridge;
+    if (bridge) {
+      this.unsubscribe = bridge.onText((text) => this.notebook.append(text));
+      bridge.start(this.settings.settings().pollMs);
+      this.state.set('listening');
+      return;
+    }
+
     this.last = null; // first successful read becomes the baseline (not captured)
     window.addEventListener('focus', this.onFocus);
     document.addEventListener('copy', this.onCopy);
@@ -47,15 +78,32 @@ export class ClipboardWatcher {
   stop(setOff = true): void {
     this.running = false;
     clearTimeout(this.timer);
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
+    this.bridge?.stop();
     window.removeEventListener('focus', this.onFocus);
     document.removeEventListener('copy', this.onCopy);
     document.removeEventListener('visibilitychange', this.onVisibility);
     if (setOff) this.state.set('off');
   }
 
-  /** Call after the app itself writes to the clipboard so it is not captured back. */
-  noteSelfWrite(text: string): void {
+  /** Writes to the clipboard without Copio capturing its own copy. */
+  async writeText(text: string): Promise<void> {
+    const bridge = this.bridge;
+    if (bridge) {
+      bridge.writeText(text);
+      return;
+    }
     this.last = text;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  setPinned(pinned: boolean): void {
+    this.bridge?.setPinned(pinned);
   }
 
   private loop(): void {
